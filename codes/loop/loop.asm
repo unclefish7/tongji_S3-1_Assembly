@@ -3,7 +3,7 @@ STKSEG SEGMENT STACK
 STKSEG ENDS
 
 DATASEG SEGMENT
-    MSG DB "A"          ; 定义字符 MSG，初始值为 'A'
+    MSG DB "a"          ; 定义字符 MSG，初始值为 'a'
     NEWLINE DB 13, 10, '$' ; 定义换行符（CR 和 LF），用于输出换行
 DATASEG ENDS
 

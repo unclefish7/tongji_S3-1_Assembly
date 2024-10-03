@@ -3,7 +3,7 @@ STKSEG SEGMENT STACK
 STKSEG ENDS
 
 DATASEG SEGMENT
-    MSG DB 'A'         ; 初始化为 'A'
+    MSG DB 'a'         ; 初始化为 'a'
     NEWLINE DB 13, 10, '$' ; 换行符（CR, LF）
 DATASEG ENDS
 
