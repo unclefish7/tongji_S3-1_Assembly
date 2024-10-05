@@ -138,3 +138,346 @@ PRINT_NEWLINE:
 
 ### 用C语言写并且进行反汇编
 
+**C语言源代码：**
+
+```c
+#include <stdio.h>
+
+int main()
+{
+	char a = 'a';
+
+	int i = 2;
+	int j = 13;
+
+	while (i) {
+		j = 13;
+		while (j) {
+			printf("%c", a);
+			a++;
+			j--;
+		}
+		printf("\n");
+		i--;
+	}
+
+	return 0;
+}
+
+```
+
+**反汇编后的代码（尝试对应，但是对应不起来）：**
+
+![](/codes/loop/loop-c-asm.png)
+
+---
+
+# 作业三：求和
+
+> **本次作业源码都放在`[repo-root]/codes/loop/`目录下**
+
+**基本要求：求1+2+3...+100，并将结果`5050`打印到屏幕**
+
+注意和的结果数据表示范围，结果的进制转换问题
+
+1. 尝试结果放在寄存器，放在数据段中，放在栈中等不同位置的操作
+2. 用户输入1-100内任何一个数，完成十进制结果输出
+3. 用C语言实现后察看反汇编代码并加注释
+
+---
+
+### 打印求和
+
+- 把累加的数和最终结果放在`dataseg`里面
+
+  ```assembly
+  .data
+      msg db 1           ; 初始值为 1
+      sum dw 0           ; 存储最终累加结果
+      buffer db 6 dup(0) ; 用于存储转换后的十进制字符串，最大支持 65535 的 5 位数字加上一个结束符
+  ```
+
+- 循环计算并储存结果
+
+  ```assembly
+      mov cx, 100        ; 设置循环计数器，循环 100 次
+      mov bx, 0          ; BX 寄存器作为累加器，初始值为 0
+  
+  start_loop:
+      mov al, msg        ; 将 msg 的值加载到 AL 中
+      mov ah, 0          ; 将 AH 置为 0，确保 AX 中是正确的 16 位数
+      add bx, ax         ; 将 AX 的值加到 BX 中
+      push bx            ; 把 BX 的值压到栈中
+      inc msg            ; msg 递增 1
+      loop start_loop    ; 循环，直到 CX 减到 0
+  
+      ; 保存结果
+      mov sum, bx        ; 将结果存入 sum
+  ```
+
+- 使用buffer存储转换后的字符串
+
+  ```assembly
+      ; 将结果转换为十进制字符串并打印（直接用寄存器里的值）
+      lea si, buffer     ; SI 指向 buffer
+      mov ax, bx        ; AX 中存储着累加的结果
+      call convert_to_string
+  
+      ; 打印字符串
+      lea dx, buffer     ; DX 指向转换后的字符串
+      mov ah, 09h        ; DOS 中断功能：打印字符串
+      int 21h    
+  
+      ; 将结果转换为十进制字符串并打印（把结果存到dataseg里面）
+      lea si, buffer     ; SI 指向 buffer
+      mov ax, sum        ; AX 中存储着累加的结果
+      call convert_to_string
+  
+      ; 打印字符串
+      lea dx, buffer     ; DX 指向转换后的字符串
+      mov ah, 09h        ; DOS 中断功能：打印字符串
+      int 21h
+  
+      ; 将结果转换为十进制字符串并打印（用栈保存的结果）
+      lea si, buffer     ; SI 指向 buffer
+      pop ax             ; 把栈中的结果给 AX 
+      call convert_to_string
+  
+      ; 打印字符串
+      lea dx, buffer     ; DX 指向转换后的字符串
+      mov ah, 09h        ; DOS 中断功能：打印字符串
+      int 21h
+  ```
+
+- 用除法取余的方式得到10进制的结果
+
+  ```assembly
+  ; 子程序：将 AX 中的数字转换为十进制字符串
+  convert_to_string proc
+      lea si, buffer + 5  ; SI 指向 buffer 的最后一位
+      mov byte ptr [si], '$' ; 在最后一位为字符串添加结束符
+      dec si              ; SI 前移，准备存放每个转换的字符
+  
+  convert_loop:
+      mov dx, 0           ; 扩展为 32 位除法
+      mov bx, 10          ; 除数为 10
+      div bx              ; AX 除以 10，商在 AX，余数在 DX
+      add dl, '0'         ; 将余数转换为 ASCII
+      mov [si], dl        ; 将转换后的字符存入 buffer
+      dec si              ; SI 前移一位
+      cmp ax, 0           ; 检查商是否为 0
+      jne convert_loop    ; 如果商不为 0，则继续循环
+  
+      ret
+  convert_to_string endp
+  ```
+
+**核心代码：**
+
+```assembly
+.model small
+.stack 100h
+.data
+    msg db 1           ; 初始值为 1
+    sum dw 0           ; 存储最终累加结果
+    buffer db 6 dup(0) ; 用于存储转换后的十进制字符串，最大支持 65535 的 5 位数字加上一个结束符
+
+.code
+main proc
+    mov ax, @data      ; 初始化数据段
+    mov ds, ax
+
+    mov cx, 100        ; 设置循环计数器，循环 100 次
+    mov bx, 0          ; BX 寄存器作为累加器，初始值为 0
+
+start_loop:
+    mov al, msg        ; 将 msg 的值加载到 AL 中
+    mov ah, 0          ; 将 AH 置为 0，确保 AX 中是正确的 16 位数
+    add bx, ax         ; 将 AX 的值加到 BX 中
+    push bx            ; 把 BX 的值压到栈中
+    inc msg            ; msg 递增 1
+    loop start_loop    ; 循环，直到 CX 减到 0
+
+    ; 保存结果
+    mov sum, bx        ; 将结果存入 sum
+
+    ; 将结果转换为十进制字符串并打印（直接用寄存器里的值）
+    lea si, buffer     ; SI 指向 buffer
+    mov ax, bx        ; AX 中存储着累加的结果
+    call convert_to_string
+
+    ; 打印字符串
+    lea dx, buffer     ; DX 指向转换后的字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h    
+
+    ; 将结果转换为十进制字符串并打印（把结果存到dataseg里面）
+    lea si, buffer     ; SI 指向 buffer
+    mov ax, sum        ; AX 中存储着累加的结果
+    call convert_to_string
+
+    ; 打印字符串
+    lea dx, buffer     ; DX 指向转换后的字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+    ; 将结果转换为十进制字符串并打印（用栈保存的结果）
+    lea si, buffer     ; SI 指向 buffer
+    pop ax             ; 把栈中的结果给 AX 
+    call convert_to_string
+
+    ; 打印字符串
+    lea dx, buffer     ; DX 指向转换后的字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+    ; 退出程序
+    mov ax, 4C00h
+    int 21h
+main endp
+
+; 子程序：将 AX 中的数字转换为十进制字符串
+convert_to_string proc
+    lea si, buffer + 5  ; SI 指向 buffer 的最后一位
+    mov byte ptr [si], '$' ; 在最后一位为字符串添加结束符
+    dec si              ; SI 前移，准备存放每个转换的字符
+
+convert_loop:
+    mov dx, 0           ; 扩展为 32 位除法
+    mov bx, 10          ; 除数为 10
+    div bx              ; AX 除以 10，商在 AX，余数在 DX
+    add dl, '0'         ; 将余数转换为 ASCII
+    mov [si], dl        ; 将转换后的字符存入 buffer
+    dec si              ; SI 前移一位
+    cmp ax, 0           ; 检查商是否为 0
+    jne convert_loop    ; 如果商不为 0，则继续循环
+
+    ret
+convert_to_string endp
+
+end main
+```
+
+---
+
+### 输入并输出
+
+- 使用中断读取键盘输入
+
+  ```assembly
+      ; 读取用户输入
+      mov ah, 01h        ; DOS 中断功能：读取键盘输入
+      int 21h
+      sub al, '0'        ; 将 ASCII 转换为数字
+      mov bl, al         ; 保存用户输入的数字
+  ```
+
+- 将输入的数字转换为十进制字符串
+
+  ```assembly
+  ; 将输入的数字转换为十进制字符串
+      mov ax, 0          ; 将 AX 清零
+      mov al, bl         ; 将用户输入的数值复制到 AX 中
+      lea si, buffer     ; SI 指向 buffer
+      call convert_to_string
+  ```
+
+**核心代码：**
+
+```assembly
+.model small
+.stack 100h
+.data
+    buffer db 6 dup(0) ; 用于存储转换后的十进制字符串，最大支持 65535 的 5 位数字加上一个结束符
+    input_prompt db 'Enter a number between 1 and 100: $'
+    invalid_input db 'Invalid input! Please enter a number between 1 and 100.$'
+    newline db 0Dh, 0Ah, '$'
+
+.code
+main proc
+    mov ax, @data      ; 初始化数据段
+    mov ds, ax
+
+input_loop:
+    ; 打印输入提示
+    lea dx, input_prompt ; DX 指向输入提示字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+    ; 读取用户输入
+    mov ah, 01h        ; DOS 中断功能：读取键盘输入
+    int 21h
+    sub al, '0'        ; 将 ASCII 转换为数字
+    mov bl, al         ; 保存用户输入的数字
+
+validate_input:
+    ; 验证输入是否在 1-100 范围内
+    cmp bl, 1          ; 输入是否小于 1
+    jb invalid         ; 如果小于 1，跳转到无效输入处理
+    cmp bl, 100        ; 输入是否大于 100
+    ja invalid         ; 如果大于 100，跳转到无效输入处理
+
+    ; 将输入的数字转换为十进制字符串
+    mov ax, 0          ; 将 AX 清零
+    mov al, bl         ; 将用户输入的数值复制到 AX 中
+    lea si, buffer     ; SI 指向 buffer
+    call convert_to_string
+
+    ; 打印转换后的字符串
+    lea dx, buffer     ; DX 指向转换后的字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+    ; 打印换行
+    lea dx, newline    ; DX 指向换行符字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+    jmp exit_program
+
+invalid:
+    ; 打印无效输入提示
+    lea dx, invalid_input ; DX 指向无效输入提示字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+    ; 打印换行
+    lea dx, newline    ; DX 指向换行符字符串
+    mov ah, 09h        ; DOS 中断功能：打印字符串
+    int 21h
+
+exit_program:
+    ; 退出程序
+    mov ax, 4C00h
+    int 21h
+main endp
+
+; 子程序：将 AX 中的数字转换为十进制字符串
+convert_to_string proc
+    lea si, buffer + 5  ; SI 指向 buffer 的最后一位
+    mov byte ptr [si], '$' ; 在最后一位为字符串添加结束符
+    dec si              ; SI 前移，准备存放每个转换的字符
+
+convert_loop:
+    mov dx, 0           ; 扩展为 32 位除法
+    mov bx, 10          ; 除数为 10
+    div bx              ; AX 除以 10，商在 AX，余数在 DX
+    add dl, '0'         ; 将余数转换为 ASCII
+    mov [si], dl        ; 将转换后的字符存入 buffer
+    dec si              ; SI 前移一位
+    cmp ax, 0           ; 检查商是否为 0
+    jne convert_loop    ; 如果商不为 0，则继续循环
+
+    ret
+convert_to_string endp
+
+end main
+
+```
+
+#### 问题
+
+- 输入多位数字的代码依旧有问题，转换过程不正确，当前只实现了输入一个字符的功能（只能输入1-10）
+- 问题代码放在了`input.asm`里
+- 只能输入1-10的代码放在了`input1.asm`里
+
