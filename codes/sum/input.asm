@@ -8,7 +8,7 @@
     input_buffer db 4 dup(0) ; 用于存储用户输入的字符（最大3位数）
 
 .code
-main proc
+main proc far
     mov ax, @data      ; 初始化数据段
     mov ds, ax
 
