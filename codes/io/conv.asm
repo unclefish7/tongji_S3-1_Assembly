@@ -1,7 +1,7 @@
 DATA_SEG SEGMENT
+    buffer DB 50, ?, 50 DUP('$')
     output_buffer DB 50 DUP(0)
     newline     DB 0Dh, 0Ah, '$'  ; 换行符，用于输出换行
-    mul_table_buffer DB 200 DUP(0) ; 用于存储99乘法表
 DATA_SEG ENDS
 
 STACK_SEG SEGMENT STACK
@@ -21,98 +21,61 @@ START:
     MOV SS, AX
     MOV SP, 100h               ; 堆栈指针初始化为段顶部
 
-    ; 调用 PrintMultiplicationTable 打印 99 乘法表
-    CALL PrintMultiplicationTable
+INPUT:
+    ; 从键盘读取输入
+    LEA DX, buffer             ; DX指向输入缓冲区
+    MOV AH, 0Ah                ; 功能号0Ah - 缓冲区输入
+    INT 21h                    ; 调用DOS中断s
+
+    CALL CONVERT_INPUT
+    CALL NumberToString        ; 调用 NumberToString 将 AX 中的值转换为字符串并存储到 output_buffer
+
+OUTPUT:
+    ; 输出换行符
+    LEA DX, newline
+    MOV AH, 09h                ; 功能号09h - 输出字符串
+    INT 21h                    ; 调用DOS中断
+
+    ; 输出转换后的字符串
+    LEA DX, output_buffer      ; DX指向 output_buffer
+    MOV AH, 09h                ; 功能号09h - 输出字符串
+    INT 21h                    ; 调用DOS中断
 
 End_Program:
     ; 结束程序
     MOV AH, 4Ch                ; 功能号4Ch - 退出程序
     INT 21h                    ; 调用DOS中断
 
-; 打印99乘法表
-PrintMultiplicationTable PROC NEAR
-    PUSH AX
-    PUSH BX
-    PUSH CX
-    PUSH DX
-    PUSH SI
-    PUSH DI
+;把buffer里的数字转换并放入ax
+CONVERT_INPUT PROC
+    MOV AX, 0          ; 清空 AX，存储结果
+    LEA SI, buffer+2   ; SI 指向 buffer+2，即输入字符串的第一个字符
 
-    MOV CX, 9          ; 外循环次数 (1 到 9)
-OuterLoop:
-    MOV BX, 1          ; 内循环初始化 (1 到 CX)
-InnerLoop:
-    MOV AX, CX         ; AX = 当前外循环数值
-    MUL BX             ; AX = CX * BX
-    CALL NumberToString ; 将乘积转换为字符串，结果在 output_buffer 中
+ConvertLoop:
+    MOV BL, [SI]       ; 将当前字符读取到 BL
+    CMP BL, 0Dh        ; 检查是否遇到回车符 (0Dh)
+    JE DoneConvert     ; 如果遇到回车，结束转换
 
-    ; 准备输出 "BX * CX = 结果"
-    MOV DL, '0'
-    ADD DL, BL        ; 将 BX 转换为字符
-    MOV mul_table_buffer, DL
+    SUB BL, '0'        ; 将 ASCII 数字字符转换为数值 ('0' -> 0, '1' -> 1, ..., '9' -> 9)
+    MOV BH, 0          ; 清空高字节
+    MOV CX, 10         ; 准备乘以 10
+    MUL CX             ; AX = AX * 10 (为新的数字腾出位置)
+    ADD AX, BX         ; 将转换的数值加到 AX 中
 
-    MOV DL, 'x'
-    MOV mul_table_buffer + 1, DL
+    INC SI             ; 指向下一个字符
+    JMP ConvertLoop    ; 继续转换下一个字符
 
-    MOV DL, '0'
-    ADD DL, CL       ; 将 CX 转换为字符
-    MOV mul_table_buffer + 2, DL
+DoneConvert:
+    RET                ; 返回主程序
 
-    MOV DL, '='
-    MOV mul_table_buffer + 3, DL
-
-    ; 将转换后的乘积复制到 mul_table_buffer 中
-    LEA SI, output_buffer
-    LEA DI, mul_table_buffer + 4
-CopyResult:
-    MOV AL, [SI]
-    MOV [DI], AL
-    INC SI
-    INC DI
-    CMP AL, '$'
-    JNE CopyResult
-
-    DEC DI
-    MOV DL, 32
-    MOV [DI], DL
-
-    INC DI
-    MOV DL, '$'
-    MOV [DI], DL
-
-    ; 输出当前的结果行
-    LEA DX, mul_table_buffer
-    MOV AH, 09h
-    INT 21h
-
-    INC BX             ; 内循环递增
-    CMP BX, CX
-    JLE InnerLoop      ; 如果 BX <= CX，继续内循环
-
-    ; 添加换行符
-    LEA DX, newline
-    MOV AH, 09h
-    INT 21h
-
-    LOOP OuterLoop     ; 外循环递减，继续下一个外循环
-
-    POP DI
-    POP SI
-    POP DX
-    POP CX
-    POP BX
-    POP AX
-    RET
-PrintMultiplicationTable ENDP
+CONVERT_INPUT ENDP
 
 ; 将 AX 中的数值转换为字符串并存储在 output_buffer 中
 NumberToString PROC NEAR
-    PUSH AX
+    PUSH AX              ; 保存 AX，避免被破坏
     PUSH BX
-    PUSH CX
-    PUSH DX
-    PUSH SI
-    PUSH DI
+    PUSH DX              ; 保存 DX 寄存器
+    PUSH SI              ; 保存 SI 寄存器
 
     MOV CX, 0         ; 初始化位数计数器
     MOV BX, 0Ah
@@ -143,12 +106,10 @@ MoveString:
     CMP AL, '$'               ; 检查是否到达结束符
     JNE MoveString            ; 如果不是结束符，继续移动
 
-    POP DI
-    POP SI
-    POP DX
-    POP CX
+    POP SI            ; 恢复 SI
+    POP DX            ; 恢复 DX
     POP BX
-    POP AX
+    POP AX            ; 恢复 AX
     RET               ; 返回主程序
 NumberToString ENDP
 
