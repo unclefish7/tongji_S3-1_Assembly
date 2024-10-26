@@ -48,6 +48,11 @@ End_Program:
 
 ;把buffer里的数字转换并放入ax
 CONVERT_INPUT PROC
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
     MOV AX, 0          ; 清空 AX，存储结果
     LEA SI, buffer+2   ; SI 指向 buffer+2，即输入字符串的第一个字符
 
@@ -66,16 +71,23 @@ ConvertLoop:
     JMP ConvertLoop    ; 继续转换下一个字符
 
 DoneConvert:
+    POP DI
+    POP SI
+    POP DX
+    POP CX
+    POP BX
     RET                ; 返回主程序
 
 CONVERT_INPUT ENDP
 
 ; 将 AX 中的数值转换为字符串并存储在 output_buffer 中
 NumberToString PROC NEAR
-    PUSH AX              ; 保存 AX，避免被破坏
+    PUSH AX
     PUSH BX
-    PUSH DX              ; 保存 DX 寄存器
-    PUSH SI              ; 保存 SI 寄存器
+    PUSH CX
+    PUSH DX
+    PUSH SI
+    PUSH DI
 
     MOV CX, 0         ; 初始化位数计数器
     MOV BX, 0Ah
@@ -106,10 +118,12 @@ MoveString:
     CMP AL, '$'               ; 检查是否到达结束符
     JNE MoveString            ; 如果不是结束符，继续移动
 
-    POP SI            ; 恢复 SI
-    POP DX            ; 恢复 DX
+    POP DI
+    POP SI
+    POP DX
+    POP CX
     POP BX
-    POP AX            ; 恢复 AX
+    POP AX
     RET               ; 返回主程序
 NumberToString ENDP
 
