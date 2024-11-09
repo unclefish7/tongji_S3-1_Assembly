@@ -82,12 +82,10 @@ load_dnum PROC NEAR
     MOV CX, 10000          ; 超时时间（循环最大次数）
 
 ConvertToASCII:
-    DEC CX                 ; 减少超时计数器
-    JZ TimeoutHandler      ; 如果 CX = 0，跳转到超时处理
-
     DIV BX                 ; DX:AX / 10, 商在 AX，余数在 DX
     ADD DL, '0'            ; 将余数转换为 ASCII
     MOV [SI], DL           ; 存入缓冲区
+    XOR DX, DX
     DEC SI                 ; 缓冲区指针前移
     CMP AX, 0              ; 检查商是否为 0
     JNE ConvertToASCII     ; 如果不为 0，继续转换
@@ -106,12 +104,6 @@ MoveLoop:
     JNE MoveLoop           ; 如果未结束，继续移动
 
     JMP EndProcess         ; 正常完成流程
-
-TimeoutHandler:
-    ; 超时处理逻辑
-    ; 在这里可以写退出或报错逻辑
-    MOV AX, 4C01h          ; 使用 DOS 中断退出，错误码 1 表示超时
-    INT 21h
 
 EndProcess:
     ; 恢复寄存器
