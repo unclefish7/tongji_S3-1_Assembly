@@ -45,39 +45,19 @@ START:
     MOV DI, 160
 loop_print:
     CALL load_year
-    ;    CALL print_string
-    LEA DX, output_buffer
-    INT 21h
-
-    LEA DX, spacer
-    INT 21h
+    CALL print_string
     
     ADD DI, 20
     CALL load_dnum
-    ;    CALL print_string
-    LEA DX, output_buffer
-    INT 21h
-
-    LEA DX, spacer
-    INT 21h
+    CALL print_string
 
     ADD DI, 20
     CALL load_num
-    ;     CALL print_string
-    LEA DX, output_buffer
-    INT 21h
-
-    LEA DX, spacer
-    INT 21h
+    CALL print_string
 
     ADD DI, 20
     CALL load_avg
-    ;     CALL print_string
-    LEA DX, output_buffer
-    INT 21h
-
-    LEA DX, newline
-    INT 21h
+    CALL print_string
 
     ADD DI, 20
     ADD SI, 16
