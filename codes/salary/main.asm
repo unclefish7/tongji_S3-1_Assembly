@@ -47,19 +47,19 @@ loop_print:
     CALL load_year
     CALL print_string
     
-    ADD DI, 20
+    ADD DI, 40
     CALL load_dnum
     CALL print_string
 
-    ADD DI, 20
+    ADD DI, 40
     CALL load_num
     CALL print_string
 
-    ADD DI, 20
+    ADD DI, 40
     CALL load_avg
     CALL print_string
 
-    ADD DI, 20
+    ADD DI, 40
     ADD SI, 16
     LOOP loop_print
     

@@ -46,6 +46,8 @@ load_year PROC
     POP DI
     POP AX
 
+    RET
+
 load_year ENDP
 
 load_dnum PROC NEAR
@@ -56,57 +58,62 @@ load_dnum PROC NEAR
     PUSH SI
     PUSH DI
 
+    ; 初始化段寄存器
     MOV AX, TABLE_SEGMENT
-    MOV ES,AX
+    MOV ES, AX
+    MOV AX, DATA_SEGMENT
+    MOV DS, AX
 
-ReadLowWord:
-    MOV AX, ES:[SI + 5]    ; 从 ES:[SI+5] 读取低 16 位
-    XOR DX, DX             ; 清空 DX（高位）
-    PUSH SI
+    ; 读取低 16 位和高 16 位
+    MOV AX, ES:[SI + 5]    ; 低 16 位 -> AX
+    XOR DX, DX             ; 高 16 位清零（形成 32 位被除数）
+    PUSH AX                ; 保存低 16 位
+    MOV AX, ES:[SI + 7]    ; 高 16 位 -> AX
+    MOV DX, AX             ; 高位扩展到 DX
+    POP AX                 ; 恢复低 16 位到 AX
 
-    ; 初始化
-    MOV BX, 10         ; 除数为 10
+    ; 初始化缓冲区
+    MOV BX, 10             ; 除数为 10
     LEA SI, output_buffer + 49 ; SI 指向缓冲区末尾
-    MOV BYTE PTR [SI], '$' ; 在缓冲区末尾存入结束符 '$'
-    DEC SI             ; SI 指向有效数字存储位置
+    MOV BYTE PTR [SI], '$' ; 缓冲区末尾写入结束符
+    DEC SI                 ; SI 指向有效数字存储位置
 
-ConvertLowWord:
-    DIV BX             ; AX = DX:AX / 10, DX = 余数
-    ADD DL, '0'        ; 将余数转换为 ASCII 字符
-    MOV [SI], DL       ; 存入缓冲区
-    DEC SI             ; 缓冲区指针前移
-    CMP AX, 0          ; 检查 AX 是否为 0
-    JNE ConvertLowWord ; 如果 AX 不为 0，继续循环
-    MOV DI, SI
+    ; 初始化超时计数器
+    MOV CX, 10000          ; 超时时间（循环最大次数）
 
-ReadHighWord:
-    POP SI
-    MOV AX, ES:[SI + 7]    ; 从 ES:[SI+7] 读取高 16 位
-    CMP AX, 0              ; 检查高位是否为 0
-    JE EndConversion       ; 如果高位为 0，跳转到结束
+ConvertToASCII:
+    DEC CX                 ; 减少超时计数器
+    JZ TimeoutHandler      ; 如果 CX = 0，跳转到超时处理
 
-ConvertHighWord:
-    MOV SI, DI
-    DIV BX             ; AX = DX:AX / 10, DX = 余数
-    ADD DL, '0'        ; 将余数转换为 ASCII 字符
-    MOV [SI], DL       ; 存入缓冲区
-    DEC SI             ; 缓冲区指针前移
-    CMP AX, 0          ; 检查 AX 是否为 0
-    JNE ConvertHighWord ; 如果 AX 不为 0，继续处理
+    DIV BX                 ; DX:AX / 10, 商在 AX，余数在 DX
+    ADD DL, '0'            ; 将余数转换为 ASCII
+    MOV [SI], DL           ; 存入缓冲区
+    DEC SI                 ; 缓冲区指针前移
+    CMP AX, 0              ; 检查商是否为 0
+    JNE ConvertToASCII     ; 如果不为 0，继续转换
 
-EndConversion:
-    INC SI             ; SI 指向第一个有效数字
+    INC SI                 ; SI 指向第一个有效数字
 
-MoveConvertedString:
-    LEA DI, output_buffer ; DI 指向缓冲区起始位置
+    ; 移动结果字符串到输出缓冲区
+MoveToOutputBuffer:
+    LEA DI, output_buffer  ; DI 指向缓冲区起始位置
 MoveLoop:
-    MOV AL, [SI]       ; 从缓冲区读取字符
-    MOV [DI], AL       ; 写入到 output_buf
-    INC SI             ; 读取下一个字符
-    INC DI             ; 写入下一个位置
-    CMP AL, '$'        ; 检查结束符
-    JNE MoveLoop       ; 如果未到结束符，继续复制
+    MOV AL, [SI]           ; 从缓冲区读取一个字符
+    MOV [DI], AL           ; 写入到 output_buffer
+    INC SI                 ; 指向下一个字符
+    INC DI                 ; 写入下一个位置
+    CMP AL, '$'            ; 检查是否结束
+    JNE MoveLoop           ; 如果未结束，继续移动
 
+    JMP EndProcess         ; 正常完成流程
+
+TimeoutHandler:
+    ; 超时处理逻辑
+    ; 在这里可以写退出或报错逻辑
+    MOV AX, 4C01h          ; 使用 DOS 中断退出，错误码 1 表示超时
+    INT 21h
+
+EndProcess:
     ; 恢复寄存器
     POP DI
     POP SI
@@ -118,15 +125,20 @@ MoveLoop:
 load_dnum ENDP
 
 
+
+
 load_num PROC
     PUSH AX
     MOV AX, TABLE_SEGMENT
     MOV ES,AX
 
+    MOV AX, DATA_SEGMENT
+    MOV DS, AX
+
     MOV AX, ES:[SI+10]
     CALL NumberToString
     POP AX
-
+    RET
 load_num ENDP
 
 load_avg PROC
@@ -134,9 +146,13 @@ load_avg PROC
     MOV AX, TABLE_SEGMENT
     MOV ES,AX
 
+    MOV AX, DATA_SEGMENT
+    MOV DS, AX
+
     MOV AX, ES:[SI + 13]
     CALL NumberToString
     POP AX
+    RET
 load_avg ENDP
 
 NumberToString PROC NEAR
