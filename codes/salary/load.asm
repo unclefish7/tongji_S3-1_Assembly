@@ -50,7 +50,7 @@ load_year PROC
 
 load_year ENDP
 
-load_dnum PROC NEAR
+load_dnum PROC
     PUSH AX            ; 保存寄存器
     PUSH BX
     PUSH CX
@@ -64,55 +64,58 @@ load_dnum PROC NEAR
     MOV AX, DATA_SEGMENT
     MOV DS, AX
 
-    ; 读取低 16 位和高 16 位
-    MOV AX, ES:[SI + 5]    ; 低 16 位 -> AX
-    XOR DX, DX             ; 高 16 位清零（形成 32 位被除数）
-    PUSH AX                ; 保存低 16 位
-    MOV AX, ES:[SI + 7]    ; 高 16 位 -> AX
-    MOV DX, AX             ; 高位扩展到 DX
-    POP AX                 ; 恢复低 16 位到 AX
+    ; 保存原始 SI 的值
+    PUSH SI             ; 保存 SI，以备后续读取高 16 位数据
+
+    ; 读取低 16 位到 AX
+    MOV AX, ES:[SI + 5] ; 低 16 位 -> AX
+    XOR DX, DX          ; 清除高 16 位
 
     ; 初始化缓冲区
     MOV BX, 10             ; 除数为 10
-    LEA SI, output_buffer + 49 ; SI 指向缓冲区末尾
+    LEA SI, output_buffer + 49 ; DI 指向缓冲区末尾
     MOV BYTE PTR [SI], '$' ; 缓冲区末尾写入结束符
-    DEC SI                 ; SI 指向有效数字存储位置
+    DEC SI                 ; DI 指向有效数字存储位置
 
-    ; 初始化超时计数器
-    MOV CX, 10000          ; 超时时间（循环最大次数）
+ConvertToStringLoop1:
+    XOR DX, DX        ; 清除 DX，用于除法操作
+    DIV BX            ; AX = AX / 10, DX = AX % 10 (余数放在 DX 中)
+    ADD DL, '0'       ; 将数字转换为字符（0-9）
+    MOV [SI], DL      ; 将字符存入缓冲区
+    DEC SI            ; 移动到下一个存储位置
+    CMP AX, 0         ; 如果 AX 不为 0，继续转换
+    JNE ConvertToStringLoop1
 
-ConvertToASCII:
-    DEC CX                 ; 减少超时计数器
-    JZ TimeoutHandler      ; 如果 CX = 0，跳转到超时处理
+    MOV DI, SI
+    POP SI
 
-    DIV BX                 ; DX:AX / 10, 商在 AX，余数在 DX
-    ADD DL, '0'            ; 将余数转换为 ASCII
-    MOV [SI], DL           ; 存入缓冲区
-    DEC SI                 ; 缓冲区指针前移
-    CMP AX, 0              ; 检查商是否为 0
-    JNE ConvertToASCII     ; 如果不为 0，继续转换
+    MOV AX, ES:[SI + 7]
+    
+    MOV SI, DI
+ConvertToStringLoop2:
+    XOR DX, DX        ; 清除 DX，用于除法操作
+    DIV BX            ; AX = AX / 10, DX = AX % 10 (余数放在 DX 中)
+    ADD DL, '0'       ; 将数字转换为字符（0-9）
+    MOV [SI], DL      ; 将字符存入缓冲区
+    DEC SI            ; 移动到下一个存储位置
+    CMP AX, 0         ; 如果 AX 不为 0，继续转换
+    JNE ConvertToStringLoop2
 
-    INC SI                 ; SI 指向第一个有效数字
 
-    ; 移动结果字符串到输出缓冲区
-MoveToOutputBuffer:
-    LEA DI, output_buffer  ; DI 指向缓冲区起始位置
-MoveLoop:
-    MOV AL, [SI]           ; 从缓冲区读取一个字符
-    MOV [DI], AL           ; 写入到 output_buffer
-    INC SI                 ; 指向下一个字符
-    INC DI                 ; 写入下一个位置
-    CMP AL, '$'            ; 检查是否结束
-    JNE MoveLoop           ; 如果未结束，继续移动
+    INC SI            ; SI 现在指向第一个有效数字的位置
 
-    JMP EndProcess         ; 正常完成流程
+    ; 移动有效字符串部分到缓冲区的起始位置
+    LEA DI, output_buffer      ; DI 指向 output_buffer 的起始位置
+MoveString1:
+    MOV AL, [SI]              ; 将有效字符读取到 AL
+    MOV [DI], AL              ; 将字符写入缓冲区起始位置
+    INC SI                    ; 移动到下一个字符
+    INC DI                    ; 移动到下一个写入位置
+    CMP AL, '$'               ; 检查是否到达结束符
+    JNE MoveString1            ; 如果不是结束符，继续移动
 
-TimeoutHandler:
-    ; 超时处理逻辑
-    ; 在这里可以写退出或报错逻辑
-    MOV AX, 4C01h          ; 使用 DOS 中断退出，错误码 1 表示超时
-    INT 21h
-
+; ---------------------------
+; 正常退出处理
 EndProcess:
     ; 恢复寄存器
     POP DI
@@ -123,6 +126,7 @@ EndProcess:
     POP AX
     RET
 load_dnum ENDP
+
 
 
 
