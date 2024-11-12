@@ -78,14 +78,12 @@ load_dnum PROC NEAR
     MOV BYTE PTR [SI], '$' ; 缓冲区末尾写入结束符
     DEC SI                 ; SI 指向有效数字存储位置
 
-    ; 初始化超时计数器
-    MOV CX, 10000          ; 超时时间（循环最大次数）
 
 ConvertToASCII:
-    DIV BX                 ; DX:AX / 10, 商在 AX，余数在 DX
-    ADD DL, '0'            ; 将余数转换为 ASCII
-    MOV [SI], DL           ; 存入缓冲区
-    XOR DX, DX
+    CALL dword_div         ; DX:AX / 10, 商在 DX:AX，余数在 CX
+    ADD CL, '0'            ; 将余数转换为 ASCII
+    MOV [SI], CL           ; 存入缓冲区
+
     DEC SI                 ; 缓冲区指针前移
     CMP AX, 0              ; 检查商是否为 0
     JNE ConvertToASCII     ; 如果不为 0，继续转换
@@ -116,7 +114,26 @@ EndProcess:
     RET
 load_dnum ENDP
 
+;32位除法，被除数和商放在DX:AX,除数放在BX,余数放在CX
+dword_div PROC
+    PUSH BX
 
+    PUSH AX
+    MOV AX, DX ;先进行高16位的除法
+    XOR DX, DX
+    DIV BX      ; 余数在DX，商 AX 暂存在 CX
+    MOV CX, AX
+
+    POP AX ;低16位除法
+    DIV BX
+    PUSH DX ; 余数在DX，高16位商在CX，两者交换
+    MOV DX, CX
+    POP CX
+
+    POP BX
+    RET
+
+dword_div ENDP
 
 
 load_num PROC
