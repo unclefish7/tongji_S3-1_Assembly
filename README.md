@@ -37,3 +37,12 @@ git checkout 20241026-multiply
 ```bash
 git checkout 20241112-salary
 ```
+
+---
+
+### 20241123：栈相关作业放在了`[repository-root]/codes/stack`目录下
+
+不需要进行分支切换，就在main分支下
+
+---
+

@@ -1,0 +1,27 @@
+# Visual Studio specific files
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# Build results
+Debug/
+Release/
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.log
+*.tlog
+*.ipch
+
+# CMake files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# NuGet packages
+packages/
