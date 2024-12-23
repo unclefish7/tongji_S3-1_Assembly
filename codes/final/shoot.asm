@@ -15,7 +15,7 @@ DATA SEGMENT
     enemy_pos DW 400                ; 敌对飞机初始位置（第三行）
     enemy_speed DW 160              ; 敌对飞机移动速度
     enemy_move_counter DW 0         ; 敌对飞机移动计数器
-    enemy_move_interval DW 1       ; 敌对飞机移动间隔
+    enemy_move_interval DW 8       ; 敌对飞机移动间隔
     game_over_msg DB 'Game Over$'
     MAX_ENEMIES EQU 5
     enemy_positions DW MAX_ENEMIES DUP(400)
@@ -23,6 +23,12 @@ DATA SEGMENT
     spawn_counter DW 0
     spawn_interval DW 5       ; 多少次循环后生成一架敌机
     rand_seed DW 0                   ; 添加随机数种子
+    bullet_char DB '|'              ; 子弹字符
+    bullet_pos DW -1                ; 子弹位置，-1表示不存在
+    bullet_active DB 0              ; 子弹是否激活
+    score DW 0                      ; 分数
+    score_msg DB 'Score: $'         ; 分数提示
+    score_num DB '0000$'            ; 分数数字字符串
 DATA ENDS
 
 CODE SEGMENT
@@ -421,12 +427,18 @@ handle_input PROC
     MOV AH, 0
     INT 16h
     
+    CMP AL, ' '                  ; 检查空格键
+    JE fire
     CMP AL, 'a'
     JE move_left
     CMP AL, 'd'
     JE move_right
     CMP AL, 'q'
     JE quit_game
+    JMP input_done_pop
+
+fire:
+    CALL fire_bullet
     JMP input_done_pop
 
 update_plane:
@@ -475,6 +487,249 @@ move_right:
     JMP update_plane
 
 handle_input ENDP
+
+; 转换分数为字符串
+convert_score PROC
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    
+    MOV AX, score
+    MOV BX, 1000
+    XOR CX, CX
+    
+    ; 转换千位
+    XOR DX, DX
+    DIV BX
+    ADD AL, '0'
+    MOV score_num[0], AL
+    MOV AX, DX
+    
+    ; 转换百位
+    MOV BX, 100
+    XOR DX, DX
+    DIV BX
+    ADD AL, '0'
+    MOV score_num[1], AL
+    MOV AX, DX
+    
+    ; 转换十位
+    MOV BX, 10
+    XOR DX, DX
+    DIV BX
+    ADD AL, '0'
+    MOV score_num[2], AL
+    
+    ; 转换个位
+    MOV AL, DL
+    ADD AL, '0'
+    MOV score_num[3], AL
+    
+    POP DX
+    POP CX
+    POP BX
+    POP AX
+    RET
+convert_score ENDP
+
+; 显示分数
+show_score PROC
+    PUSH AX
+    PUSH BX
+    PUSH SI
+    PUSH DI
+    PUSH ES
+
+    CALL convert_score
+    
+    MOV AX, 0B800h
+    MOV ES, AX
+    MOV DI, 0                    ; 第一行起始位置
+    
+    ; 显示"Score: "
+    MOV SI, OFFSET score_msg
+show_msg:
+    LODSB
+    CMP AL, '$'
+    JE show_num
+    MOV ES:[DI], AL
+    MOV AL, 0Fh
+    MOV ES:[DI+1], AL
+    ADD DI, 2
+    JMP show_msg
+    
+    ; 显示分数
+show_num:
+    MOV SI, OFFSET score_num
+show_digit:
+    LODSB
+    CMP AL, '$'
+    JE show_done
+    MOV ES:[DI], AL
+    MOV AL, 0Fh
+    MOV ES:[DI+1], AL
+    ADD DI, 2
+    JMP show_digit
+    
+show_done:
+    POP ES
+    POP DI
+    POP SI
+    POP BX
+    POP AX
+    RET
+show_score ENDP
+
+; 发射子弹
+fire_bullet PROC
+    PUSH AX
+    
+    CMP bullet_active, 0
+    JNE fire_done
+    
+    MOV AX, plane_pos
+    SUB AX, 160                  ; 在飞机上方生成子弹
+    MOV bullet_pos, AX
+    MOV bullet_active, 1
+    
+fire_done:
+    POP AX
+    RET
+fire_bullet ENDP
+
+; 更新子弹位置
+update_bullet PROC
+    PUSH AX
+    PUSH BX
+    PUSH DI
+    PUSH ES
+    
+    CMP bullet_active, 0
+    JE bullet_update_done
+    
+    MOV AX, 0B800h
+    MOV ES, AX
+    
+    ; 擦除旧子弹
+    MOV DI, bullet_pos
+    MOV AL, ' '
+    MOV ES:[DI], AL
+    
+    ; 更新子弹位置
+    SUB bullet_pos, 160          ; 向上移动一行
+    
+    ; 检查是否到达顶部
+    CMP bullet_pos, 0
+    JL deactivate_bullet
+    
+    ; 绘制新子弹
+    MOV DI, bullet_pos
+    MOV AL, bullet_char
+    MOV ES:[DI], AL
+    JMP bullet_update_done
+    
+deactivate_bullet:
+    MOV bullet_active, 0
+    
+bullet_update_done:
+    POP ES
+    POP DI
+    POP BX
+    POP AX
+    RET
+update_bullet ENDP
+
+; 检查子弹碰撞
+check_bullet_collision PROC
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    PUSH SI
+    PUSH DI
+    PUSH ES
+    
+    CMP bullet_active, 0
+    JE end_check              ; 使用近跳转
+    
+    ; 准备周围位置检测
+    MOV CX, 3                ; 3行检测（上中下）
+    MOV AX, bullet_pos
+    SUB AX, 160             ; 从上一行开始
+    
+check_row:
+    PUSH AX                 ; 保存行起始位置
+    SUB AX, 2              ; 从左边开始
+    MOV DX, 3              ; 每行检查3个位置
+
+check_col:
+    PUSH AX                ; 保存当前检测位置
+    XOR BX, BX            ; 重置敌机索引
+
+check_enemy:
+    CMP BL, MAX_ENEMIES
+    JAE check_next_pos    ; 使用近跳转
+    
+    MOV SI, BX
+    SHL SI, 1
+    MOV DI, [enemy_positions + SI]
+    CMP AX, DI
+    JE hit_found          ; 使用近跳转
+    
+    INC BL
+    JMP check_enemy       ; 继续检查下一个敌机
+
+check_next_pos:
+    POP AX                ; 恢复位置
+    ADD AX, 2            ; 移到右边一格
+    DEC DX
+    JNZ check_col        ; 继续检查本列
+    
+    POP AX               ; 恢复行起始位置
+    ADD AX, 160         ; 移到下一行
+    DEC CX
+    JNZ check_row       ; 继续检查下一行
+    JMP end_check       ; 使用近跳转
+
+hit_found:
+    ; 擦除敌机和子弹
+    PUSH AX
+    MOV AX, 0B800h
+    MOV ES, AX
+    
+    ; 擦除敌机
+    MOV AL, ' '
+    MOV ES:[DI], AL
+    MOV AL, color
+    MOV ES:[DI+1], AL
+    
+    ; 擦除子弹
+    MOV DI, bullet_pos
+    MOV AL, ' '
+    MOV ES:[DI], AL
+    MOV AL, color
+    MOV ES:[DI+1], AL
+    
+    POP AX
+    
+    MOV enemy_active[BX], 0
+    MOV bullet_active, 0
+    ADD score, 10
+    
+    ; 清理堆栈
+    POP AX                ; 清理当前位置
+    POP AX                ; 清理行起始位置
+    JMP end_check
+
+end_check:
+    POP ES
+    POP DI
+    POP SI
+    POP CX
+    POP BX
+    POP AX
+    RET
+check_bullet_collision ENDP
 
 ; 延时过程 - 使用时钟计数器
 delay PROC
@@ -526,6 +781,9 @@ START:
 game_loop:
     CALL handle_input
     CALL update_enemy
+    CALL update_bullet
+    CALL check_bullet_collision
+    CALL show_score
     CALL check_collision
     CALL delay
     JMP game_loop
