@@ -14,14 +14,15 @@ DATA SEGMENT
     prev_plane_pos DW 3760        ; 记录飞机之前的位置
     enemy_pos DW 400                ; 敌对飞机初始位置（第三行）
     enemy_speed DW 160              ; 敌对飞机移动速度
-    enemy_move_counter DW 0         ; 敌对飞机移动计数器
-    enemy_move_interval DW 8       ; 敌对飞机移动间隔
+    enemy_move_interval DW 20       ; 敌对飞机移动间隔
     game_over_msg DB 'Game Over$'
-    MAX_ENEMIES EQU 5
+    MAX_ENEMIES EQU 23              ; 修改最大敌机数量为23
+    current_max_enemies DW 5        ; 当前允许的最大敌机数量，初始为5
     enemy_positions DW MAX_ENEMIES DUP(400)
     enemy_active DB MAX_ENEMIES DUP(0)
+    enemy_move_counters DB MAX_ENEMIES DUP(0)  ; 每架敌机的移动计数器
     spawn_counter DW 0
-    spawn_interval DW 5       ; 多少次循环后生成一架敌机
+    spawn_interval DW 10       ; 多少次循环后生成一架敌机
     rand_seed DW 0                   ; 添加随机数种子
     bullet_char DB '|'              ; 子弹字符
     bullet_pos DW -1                ; 子弹位置，-1表示不存在
@@ -29,6 +30,10 @@ DATA SEGMENT
     score DW 0                      ; 分数
     score_msg DB 'Score: $'         ; 分数提示
     score_num DB '0000$'            ; 分数数字字符串
+    difficulty_timer DW 0           ; 难度计时器
+    difficulty_interval DW 36      ; 每2秒增加一次难度
+    min_spawn_interval DW 1         ; 最小生成间隔
+    min_move_interval DW 1          ; 最小移动间隔
 DATA ENDS
 
 CODE SEGMENT
@@ -223,7 +228,7 @@ spawn_enemy PROC
     PUSH CX
     XOR BX, BX
 find_slot:
-    CMP BL, MAX_ENEMIES
+    CMP BX, current_max_enemies    ; 修改检查逻辑，使用当前最大值而不是MAX_ENEMIES
     JAE no_slot
     MOV AL, enemy_active[BX]
     CMP AL, 0
@@ -234,6 +239,7 @@ find_slot:
     SHL SI, 1
     MOV [enemy_positions + SI], AX
     MOV enemy_active[BX], 1
+    MOV enemy_move_counters[BX], 0    ; 初始化移动计数器
     PUSH DI
     PUSH ES
     MOV AX, 0B800h
@@ -281,6 +287,17 @@ update_loop:
     CMP AL, 0
     JE next_update
 
+    ; 更新移动计数器
+    INC enemy_move_counters[BX]
+    MOV AL, enemy_move_counters[BX]
+    CBW                             ; 转换为字
+    CMP AX, enemy_move_interval
+    JL next_update                  ; 如果未达到间隔则跳过移动
+
+    ; 重置计数器
+    MOV enemy_move_counters[BX], 0
+
+    ; 移动敌机
     PUSH BX
     CALL erase_enemy_array
     MOV AX, enemy_speed
@@ -294,8 +311,6 @@ update_loop:
     MOV enemy_active[BX], 0
     JMP skip_draw
 draw_again:
-    ; 移除这里的 PUSH BX，避免多次 PUSH 只 POP 一次
-    ; PUSH BX
     CALL draw_enemy_array
 skip_draw:
     POP BX
@@ -763,6 +778,45 @@ wait_loop:
     RET
 delay ENDP
 
+; 更新难度过程
+update_difficulty PROC
+    PUSH AX
+    PUSH BX
+    
+    INC difficulty_timer
+    MOV AX, difficulty_timer
+    CMP AX, difficulty_interval
+    JL diff_done
+    
+    ; 重置计时器
+    MOV difficulty_timer, 0
+    
+    ; 减小敌机生成间隔
+    MOV AX, spawn_interval
+    CMP AX, min_spawn_interval
+    JLE check_move_interval
+    DEC spawn_interval
+    
+check_move_interval:
+    ; 减小敌机移动间隔
+    MOV AX, enemy_move_interval
+    CMP AX, min_move_interval
+    JLE check_enemy_count
+    DEC enemy_move_interval
+
+check_enemy_count:
+    ; 增加最大敌机数量
+    MOV AX, current_max_enemies
+    CMP AX, MAX_ENEMIES
+    JGE diff_done
+    INC current_max_enemies        ; 每次难度提升增加1个敌机
+
+diff_done:
+    POP BX
+    POP AX
+    RET
+update_difficulty ENDP
+
 ; 主程序
 START:
     MOV AX, DATA
@@ -785,6 +839,7 @@ game_loop:
     CALL check_bullet_collision
     CALL show_score
     CALL check_collision
+    CALL update_difficulty        ; 添加难度更新
     CALL delay
     JMP game_loop
 
