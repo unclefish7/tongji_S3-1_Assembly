@@ -12,11 +12,17 @@ DATA SEGMENT
     enemy_char DB 'V'               ; 敌对飞机图标
     plane_pos DW 3760             ; 飞机初始位置(第14行中间位置)
     prev_plane_pos DW 3760        ; 记录飞机之前的位置
-    enemy_pos DW 90                 ; 敌对飞机初始位置（屏幕顶端）
+    enemy_pos DW 400                ; 敌对飞机初始位置（第三行）
     enemy_speed DW 160              ; 敌对飞机移动速度
     enemy_move_counter DW 0         ; 敌对飞机移动计数器
-    enemy_move_interval DW 10       ; 敌对飞机移动间隔
+    enemy_move_interval DW 1       ; 敌对飞机移动间隔
     game_over_msg DB 'Game Over$'
+    MAX_ENEMIES EQU 5
+    enemy_positions DW MAX_ENEMIES DUP(400)
+    enemy_active DB MAX_ENEMIES DUP(0)
+    spawn_counter DW 0
+    spawn_interval DW 5       ; 多少次循环后生成一架敌机
+    rand_seed DW 0                   ; 添加随机数种子
 DATA ENDS
 
 CODE SEGMENT
@@ -170,25 +176,172 @@ erase_enemy PROC
     RET
 erase_enemy ENDP
 
-; 更新敌对飞机位置过程
+; 获取随机列偏移过程
+get_random_col PROC
+    PUSH BX
+    PUSH CX
+    PUSH DX
+    
+    ; 使用系统时钟更新种子
+    MOV AH, 0
+    INT 1Ah
+    ADD rand_seed, DX               ; 累加时钟值到种子
+    
+    ; 使用线性同余法生成随机数
+    MOV AX, rand_seed
+    MOV BX, 1357                    ; 乘数
+    MUL BX
+    ADD AX, 13579                   ; 加数
+    MOV rand_seed, AX               ; 保存新的种子
+    
+    ; 取余操作得到列号
+    XOR DX, DX
+    MOV BX, 76                      ; 限制在0-75列之间，留出边界
+    DIV BX
+    
+    ; 转换为显存偏移
+    MOV AX, DX
+    SHL AX, 1                       ; 乘2得到字符偏移
+    ADD AX, 320                     ; 加上第三行的基址
+    
+    POP DX
+    POP CX
+    POP BX
+    RET
+get_random_col ENDP
+
+spawn_enemy PROC
+    ; 寻找空闲的敌机槽并激活
+    PUSH AX
+    PUSH BX
+    PUSH CX
+    XOR BX, BX
+find_slot:
+    CMP BL, MAX_ENEMIES
+    JAE no_slot
+    MOV AL, enemy_active[BX]
+    CMP AL, 0
+    JNE next_slot
+    ; 该槽可用，生成新敌机
+    CALL get_random_col
+    MOV SI, BX
+    SHL SI, 1
+    MOV [enemy_positions + SI], AX
+    MOV enemy_active[BX], 1
+    PUSH DI
+    PUSH ES
+    MOV AX, 0B800h
+    MOV ES, AX
+    MOV DI, [enemy_positions + SI]
+    MOV AL, enemy_char
+    MOV ES:[DI], AL
+    MOV AL, enemy_color
+    MOV ES:[DI+1], AL
+    POP ES
+    POP DI
+    JMP slot_done
+next_slot:
+    INC BL
+    JMP find_slot
+no_slot:
+    ; 没有空闲
+slot_done:
+    POP CX
+    POP BX
+    POP AX
+    RET
+spawn_enemy ENDP
+
 update_enemy PROC
-    INC enemy_move_counter
-    MOV AX, enemy_move_interval
-    CMP enemy_move_counter, AX
-    JL skip_enemy_move
+    ; 每个敌机都检查移动
+    PUSH AX
+    PUSH BX
+    PUSH CX
 
-    MOV enemy_move_counter, 0
-    CALL erase_enemy
+    ; 生成新敌机计数逻辑
+    INC spawn_counter
+    MOV AX, spawn_counter
+    CMP AX, spawn_interval
+    JL skip_spawn
+    MOV spawn_counter, 0
+    CALL spawn_enemy
+skip_spawn:
+
+    XOR BX, BX
+update_loop:
+    CMP BL, MAX_ENEMIES
+    JAE done_update
+    MOV AL, enemy_active[BX]
+    CMP AL, 0
+    JE next_update
+
+    PUSH BX
+    CALL erase_enemy_array
     MOV AX, enemy_speed
-    ADD enemy_pos, AX               ; 根据速度移动敌对飞机
-    CMP enemy_pos, 4000             ; 检查是否到达屏幕底端
-    JLE draw_enemy
-    MOV enemy_pos, 90               ; 重置敌对飞机位置到屏幕顶端
-    CALL draw_enemy
-
-skip_enemy_move:
+    MOV SI, BX
+    SHL SI, 1
+    ADD [enemy_positions + SI], AX
+    MOV AX, [enemy_positions + SI]
+    CMP AX, 4000
+    JLE draw_again
+    ; 飞机离开底端，标记为空闲
+    MOV enemy_active[BX], 0
+    JMP skip_draw
+draw_again:
+    ; 移除这里的 PUSH BX，避免多次 PUSH 只 POP 一次
+    ; PUSH BX
+    CALL draw_enemy_array
+skip_draw:
+    POP BX
+next_update:
+    INC BL
+    JMP update_loop
+done_update:
+    POP CX
+    POP BX
+    POP AX
     RET
 update_enemy ENDP
+
+; 改造敌机显示/擦除以支持敌机数组索引
+draw_enemy_array PROC
+    ; 使用 BX 作为索引
+    PUSH AX
+    PUSH DI
+    PUSH ES
+    MOV AX, 0B800h
+    MOV ES, AX
+    MOV SI, BX
+    SHL SI, 1
+    MOV DI, [enemy_positions + SI]
+    MOV AL, enemy_char
+    MOV ES:[DI], AL
+    MOV AL, enemy_color
+    MOV ES:[DI+1], AL
+    POP ES
+    POP DI
+    POP AX
+    RET
+draw_enemy_array ENDP
+
+erase_enemy_array PROC
+    PUSH AX
+    PUSH DI
+    PUSH ES
+    MOV AX, 0B800h
+    MOV ES, AX
+    MOV SI, BX
+    SHL SI, 1
+    MOV DI, [enemy_positions + SI]
+    MOV AL, ' '
+    MOV ES:[DI], AL
+    MOV AL, color
+    MOV ES:[DI+1], AL
+    POP ES
+    POP DI
+    POP AX
+    RET
+erase_enemy_array ENDP
 
 ; 显示游戏结束信息过程
 show_game_over PROC
@@ -221,16 +374,33 @@ show_game_over ENDP
 ; 检查碰撞过程
 check_collision PROC
     PUSH AX
+    PUSH BX
     MOV AX, plane_pos
-    CMP AX, enemy_pos
+    XOR BX, BX
+collision_loop:
+    CMP BL, MAX_ENEMIES
+    JAE no_collision
+    MOV CL, enemy_active[BX]
+    CMP CL, 0
+    JE skip
+    MOV SI, BX
+    SHL SI, 1
+    MOV DX, [enemy_positions + SI]
+    CMP AX, DX
     JE collision_detected
-    POP AX
-    RET
-
+skip:
+    INC BL
+    JMP collision_loop
 collision_detected:
+    POP BX
+    POP AX
     CALL show_game_over
     MOV AH, 4Ch
     INT 21h
+no_collision:
+    POP BX
+    POP AX
+    RET
 check_collision ENDP
 
 ; 处理输入过程 - 增加寄存器保护
@@ -352,9 +522,6 @@ START:
 
     ; 绘制初始位置的飞机
     CALL draw_plane
-
-    ; 绘制初始位置的敌对飞机
-    CALL draw_enemy
 
 game_loop:
     CALL handle_input
