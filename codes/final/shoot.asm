@@ -7,7 +7,7 @@ PUBLIC color, output_buffer
 DATA SEGMENT
     color DB 0Fh
     enemy_color DB 04h              ; 敌对飞机颜色（红色）
-    output_buffer DB 'Press A/D to move, Q to quit$'    ; 修改提示文字
+    output_buffer DB 'Press A/D to move, SPACE to shoot, Q to quit$'    ; 修改提示文字
     plane_char DB '^'              ; 飞机图标
     enemy_char DB 'V'               ; 敌对飞机图标
     plane_pos DW 3760             ; 飞机初始位置(第14行中间位置)
@@ -378,12 +378,41 @@ show_game_over PROC
 game_over_loop:
     LODSB
     CMP AL, '$'
-    JE game_over_done
+    JE show_final_score
     MOV ES:[DI], AL
     MOV AL, 4Fh                     ; 红色背景，白色前景
     MOV ES:[DI+1], AL
     ADD DI, 2
     JMP game_over_loop
+
+show_final_score:
+    MOV AX, 0B800h
+    MOV ES, AX
+    MOV DI, 2080 + 35 * 2                    ; 第一行起始位置
+    ; 显示"Score: "
+    MOV SI, OFFSET score_msg
+show_msg2:
+    LODSB
+    CMP AL, '$'
+    JE show_num2
+    MOV ES:[DI], AL
+    MOV AL, 4Fh
+    MOV ES:[DI+1], AL
+    ADD DI, 2
+    JMP show_msg2
+
+    ; 显示分数
+show_num2:
+    MOV SI, OFFSET score_num
+show_digit2:
+    LODSB
+    CMP AL, '$'
+    JE game_over_done
+    MOV ES:[DI], AL
+    MOV AL, 4Fh
+    MOV ES:[DI+1], AL
+    ADD DI, 2
+    JMP show_digit2
 
 game_over_done:
     POP ES
@@ -471,6 +500,7 @@ quit_game:
     POP CX
     POP BX
     POP AX
+    CALL show_game_over
     MOV AH, 4Ch
     INT 21h
 
